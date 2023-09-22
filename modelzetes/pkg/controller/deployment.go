@@ -59,6 +59,7 @@ func newDeployment(
 	annotations := makeAnnotations(inference)
 
 	command := makeCommand(inference)
+	args := makeArgs(inference)
 
 	allowPrivilegeEscalation := false
 
@@ -117,6 +118,7 @@ func newDeployment(
 								{ContainerPort: int32(port), Protocol: corev1.ProtocolTCP},
 							},
 							Command:         command,
+							Args:            args,
 							ImagePullPolicy: corev1.PullPolicy(factory.Factory.Config.ImagePullPolicy),
 							Env:             envVars,
 							SecurityContext: &corev1.SecurityContext{
@@ -222,6 +224,14 @@ func makeTolerationGPU() []corev1.Toleration {
 func makeCommand(inference *v2alpha1.Inference) []string {
 	if inference.Spec.Command != nil {
 		res := strings.Split(*inference.Spec.Command, " ")
+		return res
+	}
+	return nil
+}
+
+func makeArgs(inference *v2alpha1.Inference) []string {
+	if inference.Spec.Args != nil {
+		res := strings.Split(*inference.Spec.Args, " ")
 		return res
 	}
 	return nil
