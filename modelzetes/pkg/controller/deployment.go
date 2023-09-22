@@ -22,6 +22,7 @@ import (
 const (
 	annotationInferenceSpec = "ai.tensorchord.inference.spec"
 	defaultPort             = 8080
+	defaultModelBasePath    = "/models"
 )
 
 var runtimeClassNvidia = "nvidia"
@@ -60,6 +61,12 @@ func newDeployment(
 	command := makeCommand(inference)
 
 	allowPrivilegeEscalation := false
+
+	modelBasePath := defaultModelBasePath
+	if len(inference.Spec.ModelBasePath) != 0 {
+		modelBasePath = inference.Spec.ModelBasePath
+	}
+	initContainers := makeInitContainers(inference, modelBasePath, factory)
 
 	deploymentSpec := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -100,7 +107,8 @@ func newDeployment(
 					Annotations: annotations,
 				},
 				Spec: corev1.PodSpec{
-					NodeSelector: nodeSelector,
+					NodeSelector:   nodeSelector,
+					InitContainers: initContainers,
 					Containers: []corev1.Container{
 						{
 							Name:  inference.Spec.Name,
@@ -120,6 +128,10 @@ func newDeployment(
 									Name:      "dshm",
 									MountPath: "/dev/shm",
 								},
+								{
+									Name:      "model-files",
+									MountPath: modelBasePath,
+								},
 							},
 						},
 					},
@@ -130,6 +142,12 @@ func newDeployment(
 								EmptyDir: &corev1.EmptyDirVolumeSource{
 									Medium: corev1.StorageMediumMemory,
 								},
+							},
+						},
+						{
+							Name: "model-files",
+							VolumeSource: corev1.VolumeSource{
+								EmptyDir: &corev1.EmptyDirVolumeSource{},
 							},
 						},
 					},
@@ -207,6 +225,27 @@ func makeCommand(inference *v2alpha1.Inference) []string {
 		return res
 	}
 	return nil
+}
+
+func makeInitContainers(inference *v2alpha1.Inference, modelBasePath string, factory FunctionFactory) []corev1.Container {
+	var initContainers []corev1.Container
+
+	if inference.Spec.Models != nil {
+		for _, modelConfig := range inference.Spec.Models {
+			command := strings.Split(modelConfig.Command, " ")
+			initContainers = append(initContainers, corev1.Container{
+				Name:            modelConfig.Name,
+				Image:           modelConfig.Image,
+				Command:         command,
+				ImagePullPolicy: corev1.PullPolicy(factory.Factory.Config.ImagePullPolicy),
+				VolumeMounts: []corev1.VolumeMount{{
+					Name:      "model-files",
+					MountPath: modelBasePath,
+				}},
+			})
+		}
+	}
+	return initContainers
 }
 
 func makeEnvVars(inference *v2alpha1.Inference) []corev1.EnvVar {
